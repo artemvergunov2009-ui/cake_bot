@@ -6,7 +6,7 @@ import os
 import time 
 
 # === ТВОИ НАСТРОЙКИ ===
-TOKEN = "8797133518:AAGbr2u3dqjH3fJUvlsHfd5kLwSCkvNTHKc"
+TOKEN = "8797133518:AAGlce-ZEVjw-mVvldAkVlZpo4j64oKo-h4"
 MAIN_ADMIN_ID = 7070204958  # <-- ТВОЙ ID (ГЛАВНЫЙ АДМИН)
 
 bot = telebot.TeleBot(TOKEN)
