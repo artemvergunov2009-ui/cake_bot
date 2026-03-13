@@ -6,7 +6,7 @@ import os
 import time 
 
 # === ТВОИ НАСТРОЙКИ ===
-TOKEN = "8797133518:AAGlce-ZEVjw-mVvldAkVlZpo4j64oKo-h4"
+TOKEN = "8797133518:AAE1FWqCJeqS1vkHVC-PW5ztYx2xEC6Rw4A"
 MAIN_ADMIN_ID = 7070204958  # <-- ТВОЙ ID (ГЛАВНЫЙ АДМИН)
 
 bot = telebot.TeleBot(TOKEN)
@@ -142,6 +142,7 @@ def get_main_menu(chat_id):
     
     if chat_id == MAIN_ADMIN_ID:
         markup.add(types.KeyboardButton("👥 Админы"), types.KeyboardButton("📊 Мой рейтинг"))
+        markup.add(types.KeyboardButton("👥 Все пользователи")) # <-- НОВАЯ КНОПКА
         
     return markup
 
@@ -211,6 +212,51 @@ def end_support_chat(chat_id):
         types.InlineKeyboardButton("5⭐", callback_data="rate_5")
     )
     bot.send_message(client_id, "Пожалуйста, оцените работу администратора Wnsuuu:", reply_markup=markup)
+
+# --- НОВАЯ ФУНКЦИЯ ДЛЯ ВЫВОДА ПОЛЬЗОВАТЕЛЕЙ ---
+def show_users_page(chat_id, page=0, message_id=None):
+    users_list = list(known_users.items())
+    total_users = len(users_list)
+    per_page = 10
+    max_pages = math.ceil(total_users / per_page)
+    
+    if page < 0: page = 0
+    elif page >= max_pages and max_pages > 0: page = max_pages - 1
+    
+    start = page * per_page
+    end = start + per_page
+    current_users = users_list[start:end]
+    
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    text = f"👥 <b>Список пользователей (Страница {page+1}/{max_pages}):</b>\nВсего в базе: {total_users}\n\n<i>Кликните на пользователя, чтобы написать ему личное сообщение:</i>"
+    
+    for uid, uname in current_users:
+        display_name = f"@{uname}" if uname else f"ID: {uid}"
+        markup.add(types.InlineKeyboardButton(f"👤 {display_name}", callback_data=f"usermenu_{uid}"))
+    
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(types.InlineKeyboardButton("⬅️ Назад", callback_data=f"userpage_{page-1}"))
+    if page < max_pages - 1:
+        nav_buttons.append(types.InlineKeyboardButton("Вперед ➡️", callback_data=f"userpage_{page+1}"))
+    
+    if nav_buttons:
+        markup.row(*nav_buttons)
+    markup.add(types.InlineKeyboardButton("🔙 Закрыть", callback_data="cancel_admin_action"))
+    
+    if message_id:
+        try: bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, reply_markup=markup, parse_mode="HTML")
+        except: pass
+    else:
+        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+
+def process_personal_message(message, target_id):
+    if check_cancel(message): return
+    try:
+        bot.copy_message(target_id, message.chat.id, message.message_id)
+        bot.send_message(message.chat.id, "✅ Сообщение успешно доставлено пользователю!", reply_markup=get_main_menu(message.chat.id))
+    except Exception:
+        bot.send_message(message.chat.id, "❌ Не удалось отправить сообщение. Возможно, пользователь удалил чат с ботом.", reply_markup=get_main_menu(message.chat.id))
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -305,6 +351,9 @@ def handle_text(message):
             bot.send_message(chat_id, f"📊 <b>Ваш рейтинг поддержки:</b> {avg} ⭐\nВсего оценок: {admin_rating['reviews_count']}", parse_mode="HTML")
         else:
             bot.send_message(chat_id, "У вас пока нет оценок за поддержку. 😔")
+            
+    elif message.text == "👥 Все пользователи" and chat_id == MAIN_ADMIN_ID:
+        show_users_page(chat_id, 0)
         
     elif message.text == "📋 Активные заказы" and chat_id in ADMINS:
         if not active_orders:
@@ -336,6 +385,34 @@ def handle_query(call):
             except: pass
             bot.send_message(chat_id, "Действие успешно отменено.")
         return
+
+    # --- НОВЫЙ БЛОК: УПРАВЛЕНИЕ СПИСКОМ ПОЛЬЗОВАТЕЛЕЙ ---
+    elif data.startswith("userpage_") and chat_id == MAIN_ADMIN_ID:
+        page = int(data.split("_")[1])
+        bot.answer_callback_query(call.id)
+        show_users_page(chat_id, page, call.message.message_id)
+
+    elif data.startswith("usermenu_") and chat_id == MAIN_ADMIN_ID:
+        target_id = data.split("_")[1]
+        bot.answer_callback_query(call.id)
+        uname = known_users.get(target_id, "")
+        display_name = f"@{uname}" if uname else f"ID: {target_id}"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("✉️ Написать сообщение", callback_data=f"sendpm_{target_id}"))
+        markup.add(types.InlineKeyboardButton("🔙 К списку", callback_data="userpage_0"))
+        
+        try: bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=f"Действия с пользователем <b>{display_name}</b>:", reply_markup=markup, parse_mode="HTML")
+        except: pass
+
+    elif data.startswith("sendpm_") and chat_id == MAIN_ADMIN_ID:
+        target_id = data.split("_")[1]
+        bot.answer_callback_query(call.id)
+        
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.add(types.KeyboardButton("❌ Отмена"))
+        msg = bot.send_message(chat_id, f"Напишите сообщение, которое хотите отправить этому пользователю (можно прикрепить фото или видео):", reply_markup=markup)
+        bot.register_next_step_handler(msg, process_personal_message, target_id)
 
     # --- ПРИНЯТИЕ ПОДДЕРЖКИ И ОЦЕНКА ---
     elif data.startswith("support_accept_") and chat_id == MAIN_ADMIN_ID:
@@ -1247,8 +1324,8 @@ def send_order_to_admin(chat_id, username):
     user_carts[chat_id] = [] 
     del user_orders[chat_id]
 
-# === ЗАПУСК ===\
+# === ЗАПУСК ===
 if __name__ == "__main__":
     bot.delete_webhook()
-    print("🚀 БОТ ЗАПУЩЕН! Все ошибки устранены.")
+    print("🚀 БОТ ЗАПУЩЕН! Добавлено меню управления пользователями.")
     bot.infinity_polling()
