@@ -1,2 +1,1 @@
-pyTelegramBotAPI
-supabase
+pyTelegramBotAPI==4.17.0
